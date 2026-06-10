@@ -1,0 +1,37 @@
+[project]
+name = "gold-price-predictor"
+version = "0.1.0"
+description = "Daily gold-price forecaster — XGBoost on engineered time-series features (yfinance data)."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "requests>=2.32",
+    "truststore>=0.10",     # use the OS trust store (handles MITM-proxy root CAs)
+    "pandas>=2.2",
+    "numpy>=1.26",
+    "scikit-learn>=1.5",
+    "xgboost>=2.1",
+    "pyarrow>=16.0",
+    "matplotlib>=3.9",
+    "streamlit>=1.39",
+    "plotly>=5.24",
+]
+
+[dependency-groups]
+dev = ["pytest>=8.0", "ruff>=0.6"]
+
+[project.scripts]
+gold = "gold.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gold"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
