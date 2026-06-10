@@ -77,9 +77,16 @@ def yahoo_ohlc(ticker: str, interval: str = "1d", rng: str | None = None,
 
     Daily/weekly: pass start (default config.START_DATE). Intraday (30m/15m/…):
     pass rng (e.g. "60d") — Yahoo caps intraday history. Weekly is normally
-    resampled from daily rather than fetched.
+    resampled from daily rather than fetched. Retries transient TLS/network drops.
     """
-    return _from_yahoo(ticker, start=start or config.START_DATE, interval=interval, rng=rng)
+    last = None
+    for attempt in range(3):
+        try:
+            return _from_yahoo(ticker, start=start or config.START_DATE, interval=interval, rng=rng)
+        except Exception as e:  # transient SSL EOF / connection reset through the proxy
+            last = e
+            time.sleep(1 + attempt)
+    raise last
 
 
 def _from_stooq(ticker: str, start: str) -> pd.DataFrame:

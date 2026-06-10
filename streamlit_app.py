@@ -3,10 +3,10 @@
 Run:  uv run streamlit run streamlit_app.py
 
 "周线看方向 · 日线定强弱 · 30分钟找买卖点" — Elder's Triple Screen on LIVE Yahoo
-data (current to today): weekly / daily / 30-min candlesticks, a Triple Screen
-read, macro signal lights (dollar / rates / silver), and a live spot price.
-The optional ML next-day forecast + honest backtest lives in an expander.
-Educational — not trading advice.
+data: weekly / daily / 30-min candlesticks with MACD / RSI / volume sub-panels,
+a Triple Screen read, macro signal lights, a live (auto-refreshing) spot price,
+unit switching (USD/oz · 元/克 · 円/g) and tunable indicator sensitivity.
+Indicators confirm, they don't predict — only candlesticks are lag-free.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 import xgboost as xgb
+from plotly.subplots import make_subplots
 
 from gold import config
 from gold import indicators as ind
@@ -30,9 +31,7 @@ st.set_page_config(page_title="Gold candlesticks", layout="wide")
 GOLD = "GC=F"
 MA_C = ["#BA7517", "#378ADD", "#7F77DD"]  # amber / blue / purple
 UP, DOWN = "#1D9E75", "#D85A30"
-TTL = 600
 
-# Display units: base prices are USD/oz; convert by a single factor per unit.
 GRAMS_PER_TROY_OZ = 31.1034768
 UNITS = {
     "usd_oz": {"sym": "$", "suffix": "/oz", "dec": 2},
@@ -40,25 +39,31 @@ UNITS = {
     "jpy_g": {"sym": "¥", "suffix": "/g", "dec": 0},   # 円/g
 }
 LANG_UNIT = {"en": "usd_oz", "zh-Hant": "cny_g", "ja": "jpy_g"}
+# Sensitivity presets — shorter periods = less lag, more false signals.
+SENS = {
+    "standard": dict(macd_fast=12, macd_slow=26, macd_signal=9, rsi_n=14, ma_fast=20, ma_slow=50),
+    "fast": dict(macd_fast=6, macd_slow=13, macd_signal=5, rsi_n=9, ma_fast=10, ma_slow=30),
+    "smooth": dict(macd_fast=19, macd_slow=39, macd_signal=9, rsi_n=21, ma_fast=30, ma_slow=80),
+}
 
 
-# --- live data (cached with a short TTL so it stays current) ----------------
-@st.cache_data(ttl=TTL, show_spinner="Loading daily…")
+# --- data (short TTL so it stays current; manual refresh clears caches) ------
+@st.cache_data(ttl=180, show_spinner="Loading daily…")
 def daily(ticker=GOLD):
     return yahoo_ohlc(ticker, "1d", start="2015-01-01")
 
 
-@st.cache_data(ttl=TTL, show_spinner="Loading 30-min…")
+@st.cache_data(ttl=180, show_spinner="Loading 30-min…")
 def intraday(ticker=GOLD):
     return yahoo_ohlc(ticker, "30m", rng="60d")
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def weekly(ticker=GOLD):
     return ind.resample_weekly(daily(ticker))
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
+@st.cache_data(ttl=180, show_spinner=False)
 def macro():
     out = {}
     for key, sym in {"dxy": "DX-Y.NYB", "tnx": "^TNX", "silver": "SI=F"}.items():
@@ -69,7 +74,7 @@ def macro():
     return out
 
 
-@st.cache_data(ttl=120, show_spinner=False)
+@st.cache_data(ttl=30, show_spinner=False)
 def live_spot():
     try:
         return spot("XAU")
@@ -77,9 +82,8 @@ def live_spot():
         return None
 
 
-@st.cache_data(ttl=TTL, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def fx():
-    """USD/oz → unit multipliers. cny_g/jpy_g via live Yahoo FX; None on failure."""
     out = {"usd_oz": 1.0}
     for unit, sym in {"cny_g": "CNY=X", "jpy_g": "JPY=X"}.items():
         try:
@@ -101,21 +105,52 @@ def ml_view(stem="GC_F"):
     return rep, float(row["close"].iloc[0]) * float(np.exp(pred)), pred
 
 
-# --- helpers ----------------------------------------------------------------
-def candle(df, mas, height=300, hide_weekends=True, sup=None, res=None):
-    fig = go.Figure(go.Candlestick(
+# --- chart with optional MACD / RSI / volume sub-panels ---------------------
+def panel(df, mas, subs=(), height=380, hide_weekends=True, sup=None, res=None, p=None, zones=None):
+    p = p or {}
+    rows = 1 + len(subs)
+    rh = [0.58, *([round(0.42 / len(subs), 3)] * len(subs))] if subs else [1.0]
+    fig = make_subplots(rows=rows, cols=1, shared_xaxes=True, vertical_spacing=0.025, row_heights=rh)
+    fig.add_trace(go.Candlestick(
         x=df.index, open=df["Open"], high=df["High"], low=df["Low"], close=df["Close"],
-        increasing_line_color=UP, decreasing_line_color=DOWN, showlegend=False))
+        increasing_line_color=UP, decreasing_line_color=DOWN, showlegend=False), row=1, col=1)
     for n, color in mas:
         fig.add_trace(go.Scatter(x=df.index, y=ind.sma(df["Close"], n),
-                                 line=dict(width=1, color=color), name=f"MA{n}"))
-    if sup:
-        fig.add_hline(y=sup, line=dict(dash="dot", color=UP), annotation_text="S")
-    if res:
-        fig.add_hline(y=res, line=dict(dash="dot", color=DOWN), annotation_text="R")
+                                 line=dict(width=1, color=color), name=f"MA{n}"), row=1, col=1)
+    if sup is not None:
+        fig.add_hline(y=sup, line=dict(dash="dot", color=UP, width=1), row=1, col=1)
+    if res is not None:
+        fig.add_hline(y=res, line=dict(dash="dot", color=DOWN, width=1), row=1, col=1)
+    for lo, hi, kind, label in (zones or []):
+        fig.add_hrect(y0=lo, y1=hi, line_width=0, opacity=0.13, row=1, col=1,
+                      fillcolor=UP if kind == "support" else DOWN,
+                      annotation_text=label, annotation_position="top left",
+                      annotation_font_size=10)
+
+    r = 2
+    for s in subs:
+        if s == "volume":
+            cols = [UP if c >= o else DOWN for o, c in zip(df["Open"], df["Close"])]
+            fig.add_trace(go.Bar(x=df.index, y=df["Volume"], marker_color=cols,
+                                 name="Vol", showlegend=False), row=r, col=1)
+        elif s == "macd":
+            line, sig, hist = ind.macd(df["Close"], p.get("macd_fast", 12),
+                                       p.get("macd_slow", 26), p.get("macd_signal", 9))
+            fig.add_trace(go.Bar(x=df.index, y=hist, name="MACD", showlegend=False,
+                                 marker_color=[UP if h >= 0 else DOWN for h in hist]), row=r, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=line, line=dict(width=1, color=MA_C[1]), name="MACD"), row=r, col=1)
+            fig.add_trace(go.Scatter(x=df.index, y=sig, line=dict(width=1, color=MA_C[0]), name="signal"), row=r, col=1)
+        elif s == "rsi":
+            ob = p.get("rsi_ob", 70)
+            fig.add_trace(go.Scatter(x=df.index, y=ind.rsi(df["Close"], p.get("rsi_n", 14)),
+                                     line=dict(width=1, color=MA_C[2]), name="RSI"), row=r, col=1)
+            fig.add_hline(y=ob, line=dict(dash="dot", color=DOWN, width=1), row=r, col=1)
+            fig.add_hline(y=100 - ob, line=dict(dash="dot", color=UP, width=1), row=r, col=1)
+        r += 1
+
     fig.update_layout(height=height, margin=dict(l=6, r=6, t=6, b=6),
-                      xaxis_rangeslider_visible=False,
-                      legend=dict(orientation="h", y=1.05, x=0, font=dict(size=11)))
+                      legend=dict(orientation="h", y=1.04, x=0, font=dict(size=10)))
+    fig.update_xaxes(rangeslider_visible=False)
     if hide_weekends:
         fig.update_xaxes(rangebreaks=[dict(bounds=["sat", "mon"])])
     return fig
@@ -134,7 +169,37 @@ def badge(col, title, value, kind):
         unsafe_allow_html=True)
 
 
-# --- language ---------------------------------------------------------------
+def order_card(col, label, o, risky):
+    if o is None:
+        col.caption(f"{label}: —")
+        return
+    fg, bg = _KIND["warn" if risky else ("good" if o["side"] == "buy" else "bad")]
+    rr_s = f"{o['rr']:.1f}" if o.get("rr") else "—"
+    tgt = price(o["target"]) if o.get("target") else "—"
+    warn = f"<div style='font-size:11px;margin-top:3px'>⚠ {t(lang, 'dip_buy_risky')}</div>" if risky else ""
+    col.markdown(
+        f"<div style='background:{bg};color:{fg};padding:10px 12px;border-radius:10px'>"
+        f"<div style='font-size:12px;opacity:.85'>{label} · {t(lang, 'o_reso')} {o['n_tf']}/3</div>"
+        f"<div style='font-size:19px;font-weight:600;margin:2px 0'>{price(o['entry'])}</div>"
+        f"<div style='font-size:12px'>{t(lang, 'o_stop')} {price(o['stop'])} → {t(lang, 'o_target')} {tgt}</div>"
+        f"<div style='font-size:12px;font-weight:600'>{t(lang, 'o_rr')} {rr_s}</div>{warn}</div>",
+        unsafe_allow_html=True)
+
+
+def sell_card(col, label, z):
+    if z is None:
+        col.caption(f"{label}: —")
+        return
+    fg, bg = _KIND["bad"]
+    col.markdown(
+        f"<div style='background:{bg};color:{fg};padding:10px 12px;border-radius:10px'>"
+        f"<div style='font-size:12px;opacity:.85'>{label} · {t(lang, 'o_reso')} {z['n_tf']}/3</div>"
+        f"<div style='font-size:19px;font-weight:600;margin:2px 0'>{price(z['center'])}</div>"
+        f"<div style='font-size:12px'>{price(z['low'])} – {price(z['high'])}</div></div>",
+        unsafe_allow_html=True)
+
+
+# --- sidebar: language / unit / sensitivity / refresh -----------------------
 _dl = st.query_params.get("lang", "en")
 if _dl not in LANGS:
     _dl = "en"
@@ -143,20 +208,31 @@ lang = st.sidebar.selectbox("Language · 語言 · 言語", list(LANGS),
 if lang != st.query_params.get("lang"):
     st.query_params["lang"] = lang
 
-# --- unit (default by language; deep-linkable via ?unit=) -------------------
 rates = fx()
 _du = st.query_params.get("unit") or LANG_UNIT[lang]
 if _du not in UNITS or rates.get(_du) is None:
     _du = "usd_oz"
-unit = st.sidebar.selectbox(t(lang, "unit"), list(UNITS),
-                            index=list(UNITS).index(_du),
+unit = st.sidebar.selectbox(t(lang, "unit"), list(UNITS), index=list(UNITS).index(_du),
                             format_func=lambda u: t(lang, "unit_" + u))
-if rates.get(unit) is None:        # FX unavailable → fall back to USD/oz
+if rates.get(unit) is None:
     unit = "usd_oz"
 if unit != st.query_params.get("unit"):
     st.query_params["unit"] = unit
 factor = rates.get(unit) or 1.0
 _U = UNITS[unit]
+
+with st.sidebar.expander(t(lang, "adv"), expanded=False):
+    sens = st.selectbox(t(lang, "sensitivity"), list(SENS),
+                        format_func=lambda s: t(lang, "sens_" + s))
+    rsi_ob = st.slider(t(lang, "rsi_ob_label"), 60, 85, 70)
+    swing = st.slider(t(lang, "swing_label"), 10, 80, 40, step=5)
+    use_vol = st.toggle(t(lang, "use_volume"), value=True)
+auto = st.sidebar.toggle(t(lang, "autorefresh"), value=True)
+if st.sidebar.button(t(lang, "refresh")):
+    st.cache_data.clear()
+    st.rerun()
+
+P = dict(SENS[sens], rsi_ob=rsi_ob, swing=swing, use_force=use_vol)
 
 
 def price(v):
@@ -169,21 +245,29 @@ def conv(df):
     return out
 
 
-# --- data -------------------------------------------------------------------
-d, w, i30, mac, sp = daily(), weekly(), intraday(), macro(), live_spot()
+# --- data + header ----------------------------------------------------------
+d, w, i30, mac = daily(), weekly(), intraday(), macro()
 
 st.title(t(lang, "app_title"))
 st.caption(t(lang, "ts_method"))
 
-last_close, prev = float(d["Close"].iloc[-1]), float(d["Close"].iloc[-2])
-chg = last_close / prev - 1
-h1, h2 = st.columns(2)
-h1.metric(t(lang, "live_spot"), price(sp["price"] if sp else last_close), delta=f"{chg:+.2%}")
-h2.metric("GC=F", price(last_close), help=str(d.index[-1].date()))
+
+@st.fragment(run_every="30s" if auto else None)
+def hero():
+    sp = live_spot()
+    last, prev = float(d["Close"].iloc[-1]), float(d["Close"].iloc[-2])
+    h1, h2 = st.columns(2)
+    h1.metric(t(lang, "live_spot"), price(sp["price"] if sp else last), delta=f"{last / prev - 1:+.2%}")
+    h2.metric("GC=F", price(last), help=str(d.index[-1].date()))
+    asof = (sp["updated_at"] if sp else str(d.index[-1]))
+    st.caption(f"{t(lang, 'data_time')}: {asof}")
+
+
+hero()
 
 
 # --- Triple Screen read -----------------------------------------------------
-ts = ind.triple_screen(w, d, i30)
+ts = ind.triple_screen(w, d, i30, **P)
 st.subheader(t(lang, "screen_read"))
 b1, b2, b3, b4 = st.columns(4)
 badge(b1, t(lang, "trend"), t(lang, "trend_" + ts["trend"]),
@@ -193,6 +277,39 @@ badge(b2, t(lang, "strength"), t(lang, "str_" + ts["strength"]),
 badge(b3, t(lang, "support"), price(ts["support"]), "good")
 badge(b4, t(lang, "resistance"), price(ts["resistance"]), "bad")
 st.caption("➤ " + t(lang, {"long": "bias_long", "short": "bias_short", "none": "bias_none"}[ts["bias"]]))
+
+
+# --- suggested order levels (multi-timeframe confluence) --------------------
+op = ind.order_plan(w, d, i30, bias=ts["bias"], atr_d=float(ind.atr(d).iloc[-1]))
+st.subheader(t(lang, "order_section"))
+if op["bias"] == "long":
+    st.success(t(lang, "with_trend"))
+elif op["bias"] == "short":
+    st.error(t(lang, "counter_trend_warn"))
+else:
+    st.warning(t(lang, "stand_aside_lv"))
+
+ct = op["counter_trend_buy"]
+o1, o2, o3 = st.columns(3)
+order_card(o1, t(lang, "best_buy_s1"), op["buys"][0] if op["buys"] else None, ct)
+order_card(o2, t(lang, "second_buy_s2"), op["buys"][1] if len(op["buys"]) > 1 else None, ct)
+sell_card(o3, t(lang, "sell_target"), op["sell_target"])
+if op["resonant_support"]:
+    rs = op["resonant_support"]
+    st.caption(f"{t(lang, 'resonant_buy')} · {price(rs['entry'])} · {t(lang, 'o_reso')} {rs['n_tf']}/3")
+else:
+    st.caption(t(lang, "no_resonant"))
+st.caption(t(lang, "levels_note"))
+
+# zones to shade on the candlesticks (price × unit factor)
+cz = []
+for lbl, b in (("S1", op["buys"][0] if op["buys"] else None),
+               ("S2", op["buys"][1] if len(op["buys"]) > 1 else None)):
+    if b:
+        cz.append((b["low"] * factor, b["high"] * factor, "support", lbl))
+if op["sell_target"]:
+    s = op["sell_target"]
+    cz.append((s["low"] * factor, s["high"] * factor, "resistance", "Sell"))
 
 
 # --- macro signal lights ----------------------------------------------------
@@ -206,19 +323,19 @@ if all(mac.get(k) is not None for k in ("dxy", "tnx", "silver")):
     badge(m3, t(lang, "sig_silver"), t(lang, "sig_" + sig["silver"]), km[sig["silver"]])
 
 
-# --- the three screens (candlesticks) ---------------------------------------
+# --- the three screens (candles + sub-panels) -------------------------------
 st.subheader(t(lang, "tf_weekly"))
-st.plotly_chart(candle(conv(w.tail(120)), [(13, MA_C[0]), (30, MA_C[2])], hide_weekends=False),
-                use_container_width=True)
+st.plotly_chart(panel(conv(w.tail(120)), [(13, MA_C[0]), (30, MA_C[2])],
+                      subs=["macd"], height=380, hide_weekends=False, p=P), use_container_width=True)
 st.subheader(t(lang, "tf_daily"))
-st.plotly_chart(candle(conv(d.tail(130)), [(20, MA_C[0]), (50, MA_C[1]), (200, MA_C[2])]),
-                use_container_width=True)
+st.plotly_chart(panel(conv(d.tail(160)), [(20, MA_C[0]), (50, MA_C[1]), (200, MA_C[2])],
+                      subs=["volume", "rsi"], height=470, p=P, zones=cz), use_container_width=True)
 st.subheader(t(lang, "tf_30m"))
-st.plotly_chart(candle(conv(i30.tail(160)), [(20, MA_C[0]), (50, MA_C[1])],
-                       sup=ts["support"] * factor, res=ts["resistance"] * factor),
-                use_container_width=True)
+st.plotly_chart(panel(conv(i30.tail(160)), [(20, MA_C[0]), (50, MA_C[1])], subs=["volume"],
+                      height=380, p=P, zones=cz), use_container_width=True)
 
 st.info(t(lang, "method_note"))
+st.caption(t(lang, "lag_note"))
 
 
 # --- optional ML next-day forecast + honest backtest ------------------------

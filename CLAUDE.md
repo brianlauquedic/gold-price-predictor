@@ -83,7 +83,8 @@ gold-price-predictor/
     __init__.py
     config.py                paths, tickers, horizon, hyperparams — ONE source of truth
     i18n.py                  dashboard UI strings — EN / 繁體中文 / 日本語 (hand-authored)
-    indicators.py            SMA/EMA/RSI/ATR/MACD + Triple Screen + macro signal lights
+    indicators.py            indicators + Triple Screen (tunable) + macro lights + order_plan
+                             (multi-TF confluence_zones → S1/S2 buy, sell target, stop+R:R)
     live.py                  live spot price via gold-api.com (reachable even when Yahoo isn't)
     cli.py                   `gold` entry point: fetch / spot / features / train / predict / backtest
     data/
@@ -136,10 +137,18 @@ uv run gold predict   --ticker GLD
 
 # Dashboard (local, tri-lingual EN/繁中/日本語 — deep-link ?lang=en|zh-Hant|ja & ?unit=)
 uv run streamlit run streamlit_app.py   # → http://localhost:8501
-#   Multi-timeframe CANDLESTICKS (Elder Triple Screen): weekly/daily/30-min on
-#   LIVE Yahoo data + macro signal lights + live spot. ML forecast in an expander.
-#   UNIT switch: USD/oz · 元/克 (CNY/g) · 円/g (JPY/g), defaults by language
-#   (zh→元/克). Prices = international × live FX (CNY=X/JPY=X) ÷ 31.1035g/oz.
+#   Multi-timeframe CANDLESTICKS (Elder Triple Screen): weekly (+MACD sub),
+#   daily (+volume+RSI subs), 30-min (+volume) on LIVE Yahoo data + macro lights.
+#   UNIT switch: USD/oz · 元/克 (CNY/g) · 円/g (JPY/g), defaults by language (zh→元/克);
+#     prices = international × live FX (CNY=X/JPY=X) ÷ 31.1035g/oz.
+#   Sidebar "indicators/sensitivity" expander: sensitivity preset (standard/fast/smooth
+#     = shorter periods, less lag/more noise), RSI overbought, swing lookback, volume toggle.
+#   "Order levels": S1/S2 buy + sell target from multi-TF confluence, each with
+#     entry/stop/target/R:R + resonance (n_tf/3), shaded on the candles. DIRECTION-AWARE
+#     (Elder): in a downtrend buys are flagged 接飞刀/counter-trend; method bias leads.
+#   Freshness: 30s/180s TTLs, auto-refresh hero (st.fragment run_every), refresh button,
+#     "data as of" stamp. NOTE: MACD/RSI/MA lag by construction — can't be removed, only
+#     traded against noise; only candlesticks are lag-free. Live spot ~minute-level (free).
 
 # Quality
 uv run pytest                           # no-leakage invariants (offline, 4 tests)

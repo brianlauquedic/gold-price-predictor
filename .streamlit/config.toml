@@ -1,0 +1,5 @@
+# Personal local tool — no deploy/dev toolbar.
+# "minimal" hides Streamlit's "Deploy" button and the developer menu.
+# (Use "viewer" instead if you want the Settings/theme menu back without Deploy.)
+[client]
+toolbarMode = "minimal"
