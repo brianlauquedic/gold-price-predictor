@@ -22,7 +22,7 @@ from gold import indicators as ind
 from gold.data.fetch import yahoo_ohlc
 from gold.features.build import build_features, feature_columns, latest_feature_row
 from gold.i18n import LANGS, t
-from gold.live import spot
+from gold.live import fx_rate, spot
 from gold.models.backtest import evaluate, walk_forward_series
 
 st.set_page_config(page_title="Gold candlesticks", layout="wide")
@@ -31,6 +31,15 @@ GOLD = "GC=F"
 MA_C = ["#BA7517", "#378ADD", "#7F77DD"]  # amber / blue / purple
 UP, DOWN = "#1D9E75", "#D85A30"
 TTL = 600
+
+# Display units: base prices are USD/oz; convert by a single factor per unit.
+GRAMS_PER_TROY_OZ = 31.1034768
+UNITS = {
+    "usd_oz": {"sym": "$", "suffix": "/oz", "dec": 2},
+    "cny_g": {"sym": "¥", "suffix": "/g", "dec": 2},   # 元/克
+    "jpy_g": {"sym": "¥", "suffix": "/g", "dec": 0},   # 円/g
+}
+LANG_UNIT = {"en": "usd_oz", "zh-Hant": "cny_g", "ja": "jpy_g"}
 
 
 # --- live data (cached with a short TTL so it stays current) ----------------
@@ -66,6 +75,18 @@ def live_spot():
         return spot("XAU")
     except Exception:
         return None
+
+
+@st.cache_data(ttl=TTL, show_spinner=False)
+def fx():
+    """USD/oz → unit multipliers. cny_g/jpy_g via live Yahoo FX; None on failure."""
+    out = {"usd_oz": 1.0}
+    for unit, sym in {"cny_g": "CNY=X", "jpy_g": "JPY=X"}.items():
+        try:
+            out[unit] = fx_rate(sym) / GRAMS_PER_TROY_OZ
+        except Exception:
+            out[unit] = None
+    return out
 
 
 @st.cache_data(ttl=3600, show_spinner="Backtesting…")
@@ -122,6 +143,31 @@ lang = st.sidebar.selectbox("Language · 語言 · 言語", list(LANGS),
 if lang != st.query_params.get("lang"):
     st.query_params["lang"] = lang
 
+# --- unit (default by language; deep-linkable via ?unit=) -------------------
+rates = fx()
+_du = st.query_params.get("unit") or LANG_UNIT[lang]
+if _du not in UNITS or rates.get(_du) is None:
+    _du = "usd_oz"
+unit = st.sidebar.selectbox(t(lang, "unit"), list(UNITS),
+                            index=list(UNITS).index(_du),
+                            format_func=lambda u: t(lang, "unit_" + u))
+if rates.get(unit) is None:        # FX unavailable → fall back to USD/oz
+    unit = "usd_oz"
+if unit != st.query_params.get("unit"):
+    st.query_params["unit"] = unit
+factor = rates.get(unit) or 1.0
+_U = UNITS[unit]
+
+
+def price(v):
+    return f"{_U['sym']}{v * factor:,.{_U['dec']}f}{_U['suffix']}"
+
+
+def conv(df):
+    out = df.copy()
+    out[["Open", "High", "Low", "Close"]] = out[["Open", "High", "Low", "Close"]] * factor
+    return out
+
 
 # --- data -------------------------------------------------------------------
 d, w, i30, mac, sp = daily(), weekly(), intraday(), macro(), live_spot()
@@ -132,8 +178,8 @@ st.caption(t(lang, "ts_method"))
 last_close, prev = float(d["Close"].iloc[-1]), float(d["Close"].iloc[-2])
 chg = last_close / prev - 1
 h1, h2 = st.columns(2)
-h1.metric(t(lang, "live_spot"), f"${(sp['price'] if sp else last_close):,.2f}", delta=f"{chg:+.2%}")
-h2.metric("GC=F", f"${last_close:,.2f}", help=str(d.index[-1].date()))
+h1.metric(t(lang, "live_spot"), price(sp["price"] if sp else last_close), delta=f"{chg:+.2%}")
+h2.metric("GC=F", price(last_close), help=str(d.index[-1].date()))
 
 
 # --- Triple Screen read -----------------------------------------------------
@@ -144,8 +190,8 @@ badge(b1, t(lang, "trend"), t(lang, "trend_" + ts["trend"]),
       {"up": "good", "down": "bad", "flat": "neutral"}[ts["trend"]])
 badge(b2, t(lang, "strength"), t(lang, "str_" + ts["strength"]),
       {"strong": "good", "weak": "bad", "neutral": "neutral"}[ts["strength"]])
-badge(b3, t(lang, "support"), f"${ts['support']:,.1f}", "good")
-badge(b4, t(lang, "resistance"), f"${ts['resistance']:,.1f}", "bad")
+badge(b3, t(lang, "support"), price(ts["support"]), "good")
+badge(b4, t(lang, "resistance"), price(ts["resistance"]), "bad")
 st.caption("➤ " + t(lang, {"long": "bias_long", "short": "bias_short", "none": "bias_none"}[ts["bias"]]))
 
 
@@ -162,14 +208,14 @@ if all(mac.get(k) is not None for k in ("dxy", "tnx", "silver")):
 
 # --- the three screens (candlesticks) ---------------------------------------
 st.subheader(t(lang, "tf_weekly"))
-st.plotly_chart(candle(w.tail(120), [(13, MA_C[0]), (30, MA_C[2])], hide_weekends=False),
+st.plotly_chart(candle(conv(w.tail(120)), [(13, MA_C[0]), (30, MA_C[2])], hide_weekends=False),
                 use_container_width=True)
 st.subheader(t(lang, "tf_daily"))
-st.plotly_chart(candle(d.tail(130), [(20, MA_C[0]), (50, MA_C[1]), (200, MA_C[2])]),
+st.plotly_chart(candle(conv(d.tail(130)), [(20, MA_C[0]), (50, MA_C[1]), (200, MA_C[2])]),
                 use_container_width=True)
 st.subheader(t(lang, "tf_30m"))
-st.plotly_chart(candle(i30.tail(160), [(20, MA_C[0]), (50, MA_C[1])],
-                       sup=ts["support"], res=ts["resistance"]),
+st.plotly_chart(candle(conv(i30.tail(160)), [(20, MA_C[0]), (50, MA_C[1])],
+                       sup=ts["support"] * factor, res=ts["resistance"] * factor),
                 use_container_width=True)
 
 st.info(t(lang, "method_note"))
@@ -180,7 +226,7 @@ with st.expander(t(lang, "ml_section"), expanded=False):
     try:
         rep, next_price, pr = ml_view("GC_F")
         c1, c2, c3 = st.columns(3)
-        c1.metric(t(lang, "hero_forecast_1"), f"${next_price:,.2f}", delta=f"{pr:+.2%}")
+        c1.metric(t(lang, "hero_forecast_1"), price(next_price), delta=f"{pr:+.2%}")
         c2.metric(t(lang, "m_skill"), f"{rep['rmse_skill_vs_baseline']:+.2%}", help=t(lang, "skill_help"))
         c3.metric(t(lang, "m_diracc"), f"{rep['model']['directional_acc']:.1%}", help=t(lang, "diracc_help"))
         st.caption(t(lang, "beats_yes" if rep["beats_baseline"] else "beats_no", n=rep["n_test"]))

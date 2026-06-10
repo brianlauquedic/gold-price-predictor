@@ -63,6 +63,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "sig_bull": "bullish for gold", "sig_bear": "bearish for gold", "sig_warn": "diverging — watch",
         "method_note": "Educational multi-timeframe read (Elder Triple Screen) — direction, strength, levels. Not trading advice, not a buy/sell signal.",
         "ml_section": "Optional: ML next-day forecast + honest backtest",
+        "unit": "Unit",
+        "unit_usd_oz": "USD / oz",
+        "unit_cny_g": "CNY / gram (元/克)",
+        "unit_jpy_g": "JPY / gram (円/g)",
     },
     "zh-Hant": {
         "app_title": "黃金價格預測",
@@ -117,6 +121,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "sig_bull": "利多黃金", "sig_bear": "利空黃金", "sig_warn": "背離 — 留意",
         "method_note": "教學用多時間框架判讀（Elder 三重濾網）—— 方向、強弱、價位。非投資建議,非買賣訊號。",
         "ml_section": "選用：ML 翌日預測 + 誠實回測",
+        "unit": "單位",
+        "unit_usd_oz": "美元/盎司",
+        "unit_cny_g": "元/克",
+        "unit_jpy_g": "日圓/克",
     },
     "ja": {
         "app_title": "ゴールド価格予測",
@@ -171,6 +179,10 @@ STRINGS: dict[str, dict[str, str]] = {
         "sig_bull": "金に強気", "sig_bear": "金に弱気", "sig_warn": "乖離 — 注意",
         "method_note": "学習用のマルチタイムフレーム判断（エルダーのトリプルスクリーン）—— 方向・強弱・価格水準。投資助言ではなく、売買シグナルでもありません。",
         "ml_section": "オプション：ML翌日予測＋誠実なバックテスト",
+        "unit": "単位",
+        "unit_usd_oz": "米ドル/オンス",
+        "unit_cny_g": "元/グラム",
+        "unit_jpy_g": "円/グラム",
     },
 }
 

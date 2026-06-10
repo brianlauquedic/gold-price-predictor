@@ -134,10 +134,12 @@ uv run gold train     --test-start 2016-01-01
 uv run gold backtest  --test-start 2016-01-01
 uv run gold predict   --ticker GLD
 
-# Dashboard (local, tri-lingual EN/繁中/日本語 — deep-link ?lang=en|zh-Hant|ja)
+# Dashboard (local, tri-lingual EN/繁中/日本語 — deep-link ?lang=en|zh-Hant|ja & ?unit=)
 uv run streamlit run streamlit_app.py   # → http://localhost:8501
 #   Multi-timeframe CANDLESTICKS (Elder Triple Screen): weekly/daily/30-min on
 #   LIVE Yahoo data + macro signal lights + live spot. ML forecast in an expander.
+#   UNIT switch: USD/oz · 元/克 (CNY/g) · 円/g (JPY/g), defaults by language
+#   (zh→元/克). Prices = international × live FX (CNY=X/JPY=X) ÷ 31.1035g/oz.
 
 # Quality
 uv run pytest                           # no-leakage invariants (offline, 4 tests)

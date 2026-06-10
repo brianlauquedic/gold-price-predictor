@@ -32,3 +32,16 @@ def spot(symbol: str = "XAU") -> dict:
         "price": float(d["price"]),
         "updated_at": d.get("updatedAt"),
     }
+
+
+def fx_rate(symbol: str) -> float:
+    """Latest FX rate from Yahoo (e.g. 'CNY=X' = USD/CNY, 'JPY=X' = USD/JPY).
+
+    Used to convert the international gold price (USD/oz) into domestic units
+    like 元/克 (CNY per gram). Reachable once finance.yahoo.com is routed.
+    """
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    r = requests.get(url, params={"range": "1d", "interval": "1d"},
+                     headers={"User-Agent": _UA}, timeout=20)
+    r.raise_for_status()
+    return float(r.json()["chart"]["result"][0]["meta"]["regularMarketPrice"])
