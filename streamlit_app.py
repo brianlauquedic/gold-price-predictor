@@ -105,6 +105,12 @@ def ml_view(stem="GC_F"):
     return rep, float(row["close"].iloc[0]) * float(np.exp(pred)), pred
 
 
+@st.cache_data(ttl=3600, show_spinner="Backtesting strategy…")
+def strategy_view(last_date, rr=1.5):
+    from gold.strategy import triple_screen_backtest
+    return triple_screen_backtest(daily(), weekly(), rr=rr)
+
+
 # --- chart with optional MACD / RSI / volume sub-panels ---------------------
 def panel(df, mas, subs=(), height=380, hide_weekends=True, sup=None, res=None, p=None, zones=None):
     p = p or {}
@@ -311,6 +317,22 @@ for lbl, b in (("S1", op["buys"][0] if op["buys"] else None),
 if op["sell_target"]:
     s = op["sell_target"]
     cz.append((s["low"] * factor, s["high"] * factor, "resistance", "Sell"))
+
+# does this method actually work? — honest backtest right next to the levels
+with st.expander(t(lang, "strat_section"), expanded=False):
+    sb = strategy_view(str(d.index[-1]))
+    if sb.get("n_trades"):
+        c1, c2, c3 = st.columns(3)
+        c1.metric(t(lang, "strat_winrate"), f"{sb['win_rate']:.0%}")
+        c2.metric(t(lang, "strat_exp"), f"{sb['expectancy']:+.2%}")
+        c3.metric(t(lang, "strat_pf"), f"{sb['profit_factor']:.2f}")
+        c4, c5, c6 = st.columns(3)
+        c4.metric(t(lang, "strat_total"), f"{sb['total_return']:+.0%}")
+        c5.metric(t(lang, "strat_bh"), f"{sb['buy_hold']:+.0%}")
+        c6.metric(t(lang, "strat_edge"), f"{sb['edge_vs_random']:+.2%}")
+        _bad = sb["expectancy"] <= 0 or sb["edge_vs_random"] <= 0
+        (st.error if _bad else st.success)(
+            t(lang, "strat_verdict_bad" if _bad else "strat_verdict_ok", period=sb["period"]))
 
 
 # --- macro signal lights ----------------------------------------------------
