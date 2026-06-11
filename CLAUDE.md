@@ -155,18 +155,15 @@ uv run pytest                           # no-leakage invariants (offline, 4 test
 uv run ruff check . && uv run ruff format .
 ```
 
-**Network (the proxy story — RESOLVED 2026-06-10).** This dev box runs
-Clash Verge Rev on `127.0.0.1:7897`. Yahoo/Stooq/FRED finance hosts were
-blocked because `finance.yahoo.com` had **no routing rule** and fell to the
-`MATCH,🐟 漏网之鱼` DIRECT fallback → GFW broke the TLS (OS-untrusted cert).
-**Fixed** by adding `prepend-rules` for `finance.yahoo.com` / `query1/2.…` /
-`stooq.com` → `♻️ 手动切换` in the **global Merge** profile
-(`~/Library/Application Support/io.github.clash-verge-rev.clash-verge-rev/profiles/Merge.yaml`,
-survives subscription updates). After a profile reload, `gold fetch` pulls
-real GC=F daily to today. The external-controller API is OFF
-(`enable_external_controller: false`) — can't reload via API, user reloads in GUI.
-Still-reachable-without-the-fix: `gold-api.com` (live spot, `gold spot`),
-GitHub (`gh api`). Offline fallback remains `gold import-csv`.
+**Network (proxy gotcha — usually RESOLVED by routing).** If a local proxy
+blocks Yahoo/Stooq/FRED finance hosts (a finance host with no routing rule can
+fall to a DIRECT/MATCH fallback and get reset or intercepted → OS-untrusted
+cert), route those hosts (`finance.yahoo.com`, `query1/2.finance.yahoo.com`,
+`stooq.com`) through a working proxy node — not DIRECT, no TLS interception.
+`truststore` already routes verification through the OS trust store, so a
+trusted proxy CA just works. After that, `gold fetch` pulls real GC=F daily to
+today. Reachable even when finance hosts are blocked: `gold-api.com` (live spot,
+`gold spot`) and GitHub. Offline fallback: `gold import-csv`.
 
 ---
 
