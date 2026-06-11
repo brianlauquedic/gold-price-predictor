@@ -49,3 +49,20 @@ fetch → features → train → predict
   (real rate, DXY) are a documented, off-by-default hook.
 
 Every knob lives in [`src/gold/config.py`](./src/gold/config.py).
+
+## Deploy (free)
+
+The dashboard is containerised (`Dockerfile`). Deploy on Render's free plan and
+point a subdomain at it:
+
+1. **Render** → New → Blueprint (uses `render.yaml`) or Web Service → connect this
+   repo → it builds the `Dockerfile` (free plan) → `https://<app>.onrender.com`.
+2. **Custom domain**: Render → service → Settings → Custom Domains → add your
+   subdomain; Render shows a CNAME target.
+3. **DNS** (e.g. Cloudflare): add `CNAME  gold  →  <app>.onrender.com`,
+   **DNS-only (grey cloud)** so Render can issue the SSL cert.
+
+Free-plan notes: the service sleeps after ~15 min idle (≈30–60 s cold start). The
+hosted app runs the live candlesticks / order levels / strategy backtest; the
+XGBoost ML forecast needs a local data file (`gold fetch`) and is skipped online.
+

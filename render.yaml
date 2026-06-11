@@ -1,0 +1,10 @@
+# Render Blueprint — one-click deploy of the gold dashboard (free plan).
+# dashboard.render.com → New → Blueprint → connect this repo.
+services:
+  - type: web
+    name: gold-price-predictor
+    runtime: docker
+    plan: free
+    branch: main
+    healthCheckPath: /_stcore/health
+    autoDeploy: true
