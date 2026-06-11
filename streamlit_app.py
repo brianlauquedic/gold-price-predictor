@@ -227,18 +227,22 @@ if unit != st.query_params.get("unit"):
 factor = rates.get(unit) or 1.0
 _U = UNITS[unit]
 
-with st.sidebar.expander(t(lang, "adv"), expanded=False):
-    sens = st.selectbox(t(lang, "sensitivity"), list(SENS),
-                        format_func=lambda s: t(lang, "sens_" + s))
-    rsi_ob = st.slider(t(lang, "rsi_ob_label"), 60, 85, 70)
-    swing = st.slider(t(lang, "swing_label"), 10, 80, 40, step=5)
-    use_vol = st.toggle(t(lang, "use_volume"), value=True)
+# Indicators/sensitivity confuses beginners — hidden by default; power users opt in via ?expert=1.
+if st.query_params.get("expert") in ("1", "true", "yes"):
+    with st.sidebar.expander(t(lang, "adv"), expanded=False):
+        sens = st.selectbox(t(lang, "sensitivity"), list(SENS),
+                            format_func=lambda s: t(lang, "sens_" + s))
+        rsi_ob = st.slider(t(lang, "rsi_ob_label"), 60, 85, 70)
+        swing = st.slider(t(lang, "swing_label"), 10, 80, 40, step=5)
+        use_vol = st.toggle(t(lang, "use_volume"), value=True)
+    P = dict(SENS[sens], rsi_ob=rsi_ob, swing=swing, use_force=use_vol)
+else:
+    P = dict(SENS["standard"], rsi_ob=70, swing=40, use_force=True)  # locked standard defaults
+
 auto = st.sidebar.toggle(t(lang, "autorefresh"), value=True)
 if st.sidebar.button(t(lang, "refresh")):
     st.cache_data.clear()
     st.rerun()
-
-P = dict(SENS[sens], rsi_ob=rsi_ob, swing=swing, use_force=use_vol)
 
 
 def price(v):
