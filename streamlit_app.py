@@ -28,6 +28,14 @@ from gold.models.backtest import evaluate, walk_forward_series
 
 st.set_page_config(page_title="Gold candlesticks", layout="wide")
 
+# Mobile: stack column rows (badges / order cards / metrics) vertically on narrow screens.
+st.markdown(
+    "<style>@media (max-width:640px){"
+    "[data-testid='stHorizontalBlock']{flex-direction:column;gap:8px}"
+    "[data-testid='stColumn']{width:100%!important;min-width:100%!important;flex:1 1 100%!important}}"
+    "</style>",
+    unsafe_allow_html=True)
+
 GOLD = "GC=F"
 MA_C = ["#BA7517", "#378ADD", "#7F77DD"]  # amber / blue / purple
 UP, DOWN = "#1D9E75", "#D85A30"
@@ -206,7 +214,20 @@ def sell_card(col, label, z):
 
 
 # --- sidebar: language / unit / sensitivity / refresh -----------------------
-_dl = st.query_params.get("lang", "en")
+def _browser_lang():
+    """Map the browser's Accept-Language to a supported locale (first visit only)."""
+    try:
+        first = (st.context.headers.get("Accept-Language") or "").lower().split(",")[0].strip()
+    except Exception:
+        first = ""
+    if first.startswith("zh"):
+        return "zh-Hant"
+    if first.startswith("ja"):
+        return "ja"
+    return "en"
+
+
+_dl = st.query_params.get("lang") or _browser_lang()
 if _dl not in LANGS:
     _dl = "en"
 lang = st.sidebar.selectbox("Language · 語言 · 言語", list(LANGS),
