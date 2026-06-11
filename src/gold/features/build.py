@@ -107,17 +107,19 @@ def feature_columns(df: pd.DataFrame) -> list[str]:
     return [c for c in df.columns if c not in ("target", "close")]
 
 
-def build_features(ticker: str | None = None, save: bool = True) -> pd.DataFrame:
-    """Full training matrix: engineer, drop warmup + unlabeled tail, persist."""
-    out = _engineer_frame(load_raw(ticker)).dropna()
-    if save:
+def build_features(ticker: str | None = None, save: bool = True, df: pd.DataFrame | None = None) -> pd.DataFrame:
+    """Full training matrix: engineer, drop warmup + unlabeled tail. Pass ``df`` to build
+    from an in-memory OHLCV frame (e.g. live-fetched, hosted with no parquet); else load
+    from data/raw/. Only persists when reading from disk."""
+    out = _engineer_frame(df if df is not None else load_raw(ticker)).dropna()
+    if save and df is None:
         config.DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
         out.to_parquet(config.FEATURES_PATH)
     return out
 
 
-def latest_feature_row(ticker: str | None = None) -> pd.DataFrame:
+def latest_feature_row(ticker: str | None = None, df: pd.DataFrame | None = None) -> pd.DataFrame:
     """The most recent fully-featured row (its target is unknown) — for live predict."""
-    out = _engineer_frame(load_raw(ticker))
+    out = _engineer_frame(df if df is not None else load_raw(ticker))
     out = out.dropna(subset=feature_columns(out))
     return out.iloc[[-1]]

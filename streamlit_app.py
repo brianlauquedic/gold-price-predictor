@@ -102,15 +102,29 @@ def fx():
 
 
 @st.cache_data(ttl=3600, show_spinner="Backtesting…")
-def ml_view(stem="GC_F"):
-    df = build_features(stem, False)
+def ml_view(last_date):
+    d_ = daily()  # build features from LIVE data → works online (no parquet needed)
+    df = build_features(df=d_, save=False)
     rep = evaluate(walk_forward_series(df, pd.Timestamp(config.TEST_START), config.RETRAIN_EVERY))
     cols = feature_columns(df)
     model = xgb.XGBRegressor(**config.XGB_PARAMS)
     model.fit(df[cols], df["target"])
-    row = latest_feature_row(stem)
+    row = latest_feature_row(df=d_)
     pred = float(model.predict(row[cols])[0])
     return rep, float(row["close"].iloc[0]) * float(np.exp(pred)), pred
+
+
+@st.cache_data(ttl=1800, show_spinner="Backtesting…")
+def lab_holdout(last_date, rr, atr_stop, cost_bp, holdout_pct):
+    from gold.strategy import backtest_with_holdout
+    return backtest_with_holdout(daily(), weekly(), holdout_frac=holdout_pct / 100,
+                                 rr=rr, atr_stop=atr_stop, cost=cost_bp / 10000)
+
+
+@st.cache_data(ttl=1800, show_spinner="Sweeping…")
+def lab_sweep_view(last_date, cost_bp, holdout_pct):
+    from gold.strategy import strategy_sweep
+    return strategy_sweep(daily(), weekly(), holdout_frac=holdout_pct / 100, cost=cost_bp / 10000)
 
 
 @st.cache_data(ttl=3600, show_spinner="Backtesting strategy…")
@@ -386,14 +400,57 @@ st.info(t(lang, "method_note"))
 st.caption(t(lang, "lag_note"))
 
 
-# --- optional ML next-day forecast + honest backtest ------------------------
+# --- optional ML next-day forecast + honest backtest (button-gated; runs online) ---
 with st.expander(t(lang, "ml_section"), expanded=False):
-    try:
-        rep, next_price, pr = ml_view("GC_F")
-        c1, c2, c3 = st.columns(3)
-        c1.metric(t(lang, "hero_forecast_1"), price(next_price), delta=f"{pr:+.2%}")
-        c2.metric(t(lang, "m_skill"), f"{rep['rmse_skill_vs_baseline']:+.2%}", help=t(lang, "skill_help"))
-        c3.metric(t(lang, "m_diracc"), f"{rep['model']['directional_acc']:.1%}", help=t(lang, "diracc_help"))
-        st.caption(t(lang, "beats_yes" if rep["beats_baseline"] else "beats_no", n=rep["n_test"]))
-    except Exception as e:
-        st.caption(f"ML view needs cached daily data (run `uv run gold fetch`). {e}")
+    if st.button(t(lang, "run_btn"), key="run_ml"):
+        st.session_state["ml_on"] = True
+    if st.session_state.get("ml_on"):
+        try:
+            rep, next_price, pr = ml_view(str(d.index[-1]))
+            c1, c2, c3 = st.columns(3)
+            c1.metric(t(lang, "hero_forecast_1"), price(next_price), delta=f"{pr:+.2%}")
+            c2.metric(t(lang, "m_skill"), f"{rep['rmse_skill_vs_baseline']:+.2%}", help=t(lang, "skill_help"))
+            c3.metric(t(lang, "m_diracc"), f"{rep['model']['directional_acc']:.1%}", help=t(lang, "diracc_help"))
+            st.caption(t(lang, "beats_yes" if rep["beats_baseline"] else "beats_no", n=rep["n_test"]))
+        except Exception as e:
+            st.caption(f"ML unavailable: {e}")
+
+
+# --- Backtest Lab (?lab=1): out-of-sample, net of costs ---------------------
+if st.query_params.get("lab") in ("1", "true", "yes"):
+    st.divider()
+    st.subheader(t(lang, "lab_section"))
+    st.caption(t(lang, "lab_intro"))
+    lc1, lc2, lc3, lc4 = st.columns(4)
+    rr_l = lc1.slider(t(lang, "lab_rr"), 1.0, 3.0, 1.5, step=0.5)
+    atr_l = lc2.slider(t(lang, "lab_atr"), 1.0, 3.0, 2.0, step=0.5)
+    cost_bp = lc3.slider(t(lang, "lab_cost"), 0, 20, 5)
+    ho = lc4.slider(t(lang, "lab_holdout"), 20, 40, 30, step=5)
+
+    hb = lab_holdout(str(d.index[-1]), rr_l, atr_l, cost_bp, ho)
+    ins, oos = hb["in_sample"], hb["holdout"]
+    la, lb = st.columns(2)
+    la.markdown(f"**{t(lang, 'lab_in')}**")
+    la.metric(t(lang, "lab_exp"), f"{ins['expectancy']:+.2%}" if ins["n_trades"] else "—")
+    la.caption(f"{t(lang, 'lab_trades')} {ins['n_trades']} · {t(lang, 'lab_total')} {ins['total_return']:+.0%}")
+    lb.markdown(f"**{t(lang, 'lab_out')}**")
+    lb.metric(t(lang, "lab_exp"), f"{oos['expectancy']:+.2%}" if oos["n_trades"] else "—")
+    lb.caption(f"{t(lang, 'lab_trades')} {oos['n_trades']} · {t(lang, 'lab_total')} {oos['total_return']:+.0%} · B&H {hb['holdout_buy_hold']:+.0%}")
+
+    if oos["n_trades"] and oos["expectancy"] > 0:
+        st.success(t(lang, "lab_v_survives", n=oos["n_trades"]))
+    elif oos["n_trades"]:
+        st.error(t(lang, "lab_v_noedge"))
+    if hb["oos_gap"] == hb["oos_gap"] and hb["oos_gap"] > 0.005:
+        st.warning(t(lang, "lab_v_overfit", gap=f"{hb['oos_gap']:+.2%}"))
+
+    if st.button(t(lang, "lab_sweep_btn"), key="run_sweep"):
+        st.session_state["sweep_on"] = True
+    if st.session_state.get("sweep_on"):
+        sw = lab_sweep_view(str(d.index[-1]), cost_bp, ho)
+        st.warning(t(lang, "lab_sweep_warn", n=sw["n_combos"]))
+        tbl = pd.DataFrame(sw["rows"])
+        if not tbl.empty:
+            for c in ("in_exp", "oos_exp", "oos_gap", "oos_total"):
+                tbl[c] = (tbl[c] * 100).round(2)
+            st.dataframe(tbl, use_container_width=True, hide_index=True)
