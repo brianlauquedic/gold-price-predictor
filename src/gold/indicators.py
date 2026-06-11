@@ -61,14 +61,26 @@ def force_index(df: pd.DataFrame, n: int = 13) -> pd.Series:
 
 
 # --- Triple Screen ----------------------------------------------------------
-def weekly_trend(weekly: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9) -> str:
-    """Screen 1 (the tide): direction from the weekly MACD-histogram slope."""
+def weekly_trend(weekly: pd.DataFrame, fast: int = 12, slow: int = 26, signal: int = 9,
+                 confirmed: bool = True) -> str:
+    """Screen 1 (the tide): direction from the weekly MACD-histogram slope.
+
+    A deadband gives a genuine 'flat' state — a tiny wiggle is not a trend (without
+    it the raw slope is up/down ~50/50 and 'flat' never triggers). ``confirmed``
+    drops the still-forming current week so the signal does not repaint (cost: it
+    can lag up to ~1 week).
+    """
     _, _, hist = macd(weekly["Close"], fast, slow, signal)
     hist = hist.dropna()
+    if confirmed and len(hist) > 1:
+        hist = hist.iloc[:-1]  # exclude the incomplete current week (no repaint)
     if len(hist) < 2:
         return "flat"
     last, prev = hist.iloc[-1], hist.iloc[-2]
-    return "up" if last > prev else "down" if last < prev else "flat"
+    deadband = 0.25 * hist.diff().abs().tail(slow).mean()  # quarter of a typical weekly move
+    if not abs(last - prev) > deadband:
+        return "flat"
+    return "up" if last > prev else "down"
 
 
 def daily_strength(daily: pd.DataFrame, rsi_n: int = 14, rsi_ob: int = 70,
@@ -144,12 +156,15 @@ def _zone(members, price):
 
 
 def confluence_zones(weekly, daily, intraday, price: float, tol: float):
-    """Cluster candidates within `tol` into zones; return (supports, resistances)
-    sorted by resonance (distinct timeframes), then score, then proximity to price."""
+    """Cluster candidates into zones; return (supports, resistances) sorted
+    NEAREST-FIRST (S1/S2 = closest actionable levels; resonance shown as a quality
+    score). A width cap stops single-linkage from chaining a long string of levels
+    into one over-wide band."""
     cands = sorted(_level_candidates(weekly, daily, intraday), key=lambda c: c[0])
+    maxw = 1.5 * tol  # cap a zone's total span (anti-chaining)
     zones, cur = [], []
     for c in cands:
-        if cur and c[0] - cur[-1][0] > tol:
+        if cur and (c[0] - cur[-1][0] > tol or c[0] - cur[0][0] > maxw):
             zones.append(_zone(cur, price))
             cur = []
         cur.append(c)
@@ -164,10 +179,11 @@ def confluence_zones(weekly, daily, intraday, price: float, tol: float):
 def order_plan(weekly, daily, intraday, *, bias: str, atr_d: float, **_):
     """Direction-aware buy/sell levels with stop + risk:reward.
 
-    S1/S2 = the two highest-resonance support zones; sell target = nearest strong
-    resistance; shorts = resistance zones. Buying is flagged counter-trend unless
-    the weekly bias is long (Elder: only trade with the tide). Method-derived
-    structure, NOT a prediction or advice.
+    S1/S2 = the two NEAREST support zones (actionable; resonance shown as quality);
+    sell target = nearest resistance; shorts = resistance zones. Buying is flagged
+    counter-trend only in a downtrend (Elder: only trade with the tide; a flat
+    market is range-trading, not a falling knife). Method-derived structure, NOT a
+    prediction or advice.
     """
     price = float(daily["Close"].iloc[-1])
     sups, ress = confluence_zones(weekly, daily, intraday, price, 0.4 * atr_d)
@@ -189,7 +205,7 @@ def order_plan(weekly, daily, intraday, *, bias: str, atr_d: float, **_):
     # the "真最佳买入区" = the strongest multi-timeframe-confluence support (n_tf ≥ 2),
     # even if it is not the nearest. None when there is no real resonance support.
     res_sup = max((z for z in sups if z["n_tf"] >= 2), key=lambda z: (z["n_tf"], z["score"]), default=None)
-    return {"price": price, "bias": bias, "counter_trend_buy": bias != "long",
+    return {"price": price, "bias": bias, "counter_trend_buy": bias == "short",
             "buys": [buy(z) for z in sups[:2]], "shorts": [short(z) for z in ress[:2]],
             "sell_target": res0, "resonant_support": buy(res_sup) if res_sup else None}
 

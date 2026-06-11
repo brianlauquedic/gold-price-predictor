@@ -277,6 +277,7 @@ badge(b2, t(lang, "strength"), t(lang, "str_" + ts["strength"]),
 badge(b3, t(lang, "support"), price(ts["support"]), "good")
 badge(b4, t(lang, "resistance"), price(ts["resistance"]), "bad")
 st.caption("➤ " + t(lang, {"long": "bias_long", "short": "bias_short", "none": "bias_none"}[ts["bias"]]))
+st.caption(t(lang, "confirmed_note"))
 
 
 # --- suggested order levels (multi-timeframe confluence) --------------------

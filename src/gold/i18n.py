@@ -96,6 +96,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "resonant_buy": "★ True confluence buy zone (multi-timeframe)",
         "no_resonant": "No strong multi-timeframe buy zone right now — the strong confluence is the resistance / sell zone above.",
         "levels_note": "Levels are method-derived structure from multi-timeframe confluence — not advice, not a prediction. Gold can break any support; whether and how much to order is your call.",
+        "confirmed_note": "Weekly direction uses the last completed week (this week is still forming) — it can lag up to a week, but it won't repaint.",
     },
     "zh-Hant": {
         "app_title": "黃金價格預測",
@@ -183,6 +184,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "resonant_buy": "★ 真共振買區(多週期)",
         "no_resonant": "目前沒有強多週期共振買區 —— 強共振在上方的壓力／賣出區。",
         "levels_note": "價位是多週期共振算出的結構位 —— 非建議、非預測。金價可擊穿任何支撐;掛不掛、掛多少由你決定。",
+        "confirmed_note": "週線方向採用上一根已完成週線(本週尚未走完)—— 可能滯後最多一週,但不會重繪(訊號不回跳)。",
     },
     "ja": {
         "app_title": "ゴールド価格予測",
@@ -270,6 +272,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "resonant_buy": "★ 真の共振買いゾーン(マルチタイムフレーム)",
         "no_resonant": "現在、強いマルチタイムフレームの買いゾーンはありません —— 強い共振は上のレジスタンス／売りゾーンです。",
         "levels_note": "価格はマルチタイムフレームの共振から導いた構造 —— 助言でも予測でもありません。金はどの支持線も割れ得ます。発注の有無や数量はご自身の判断で。",
+        "confirmed_note": "週足の方向は直近の確定した週足を使用(今週は未確定)—— 最大1週間遅れることがありますが、リペイントはしません。",
     },
 }
 

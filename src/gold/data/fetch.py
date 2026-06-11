@@ -59,7 +59,7 @@ def _from_yahoo(ticker: str, start: str | None = None,
     else:    # absolute window from `start` to now
         params = {"period1": int(pd.Timestamp(start).timestamp()),
                   "period2": int(time.time()), "interval": interval}
-    r = requests.get(url, params=params, headers={"User-Agent": _UA}, timeout=30)
+    r = requests.get(url, params=params, headers={"User-Agent": _UA}, timeout=12)
     r.raise_for_status()
     res = r.json()["chart"]["result"][0]
     q = res["indicators"]["quote"][0]
