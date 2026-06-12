@@ -115,10 +115,10 @@ def ml_view(last_date):
 
 
 @st.cache_data(ttl=1800, show_spinner="Backtesting…")
-def lab_holdout(last_date, rr, atr_stop, cost_bp, holdout_pct):
+def lab_holdout(last_date, rr, atr_stop, cost_bp, holdout_pct, variant="macd"):
     from gold.strategy import backtest_with_holdout
     return backtest_with_holdout(daily(), weekly(), holdout_frac=holdout_pct / 100,
-                                 rr=rr, atr_stop=atr_stop, cost=cost_bp / 10000)
+                                 rr=rr, atr_stop=atr_stop, cost=cost_bp / 10000, variant=variant)
 
 
 @st.cache_data(ttl=1800, show_spinner="Sweeping…")
@@ -421,13 +421,15 @@ if st.query_params.get("lab") in ("1", "true", "yes"):
     st.divider()
     st.subheader(t(lang, "lab_section"))
     st.caption(t(lang, "lab_intro"))
+    variant = st.selectbox(t(lang, "lab_strat"), ["macd", "elder"],
+                           format_func=lambda v: t(lang, "var_" + v))
     lc1, lc2, lc3, lc4 = st.columns(4)
     rr_l = lc1.slider(t(lang, "lab_rr"), 1.0, 3.0, 1.5, step=0.5)
     atr_l = lc2.slider(t(lang, "lab_atr"), 1.0, 3.0, 2.0, step=0.5)
     cost_bp = lc3.slider(t(lang, "lab_cost"), 0, 20, 5)
     ho = lc4.slider(t(lang, "lab_holdout"), 20, 40, 30, step=5)
 
-    hb = lab_holdout(str(d.index[-1]), rr_l, atr_l, cost_bp, ho)
+    hb = lab_holdout(str(d.index[-1]), rr_l, atr_l, cost_bp, ho, variant)
     ins, oos = hb["in_sample"], hb["holdout"]
     la, lb = st.columns(2)
     la.markdown(f"**{t(lang, 'lab_in')}**")
@@ -437,7 +439,8 @@ if st.query_params.get("lab") in ("1", "true", "yes"):
     lb.metric(t(lang, "lab_exp"), f"{oos['expectancy']:+.2%}" if oos["n_trades"] else "—")
     lb.caption(f"{t(lang, 'lab_trades')} {oos['n_trades']} · {t(lang, 'lab_total')} {oos['total_return']:+.0%} · B&H {hb['holdout_buy_hold']:+.0%}")
 
-    if oos["n_trades"] and oos["expectancy"] > 0:
+    # "survives" only if it actually made money out-of-sample (positive expectancy AND total)
+    if oos["n_trades"] and oos["expectancy"] > 0 and oos["total_return"] > 0:
         st.success(t(lang, "lab_v_survives", n=oos["n_trades"]))
     elif oos["n_trades"]:
         st.error(t(lang, "lab_v_noedge"))

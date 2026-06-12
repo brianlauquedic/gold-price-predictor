@@ -41,13 +41,14 @@ def _tide_daily(daily: pd.DataFrame, weekly: pd.DataFrame) -> pd.Series:
     return wt.reindex(daily.index, method="ffill")
 
 
-def _simulate(daily, atr, i_entry, direction, rr, atr_stop, tide, cost=0.0):
-    """One trade opened at the OPEN of bar i_entry → (ret_net_of_cost, reason, exit_i) or None."""
+def _simulate(daily, atr, i_entry, direction, rr, atr_stop, tide, cost=0.0, entry_price=None):
+    """One trade opened on bar i_entry (at ``entry_price``, default = the OPEN) →
+    (ret_net_of_cost, reason, exit_i) or None."""
     opn, high, low, close = daily["Open"], daily["High"], daily["Low"], daily["Close"]
     a = atr.iloc[i_entry - 1]  # ATR known at the signal bar
     if not np.isfinite(a) or a <= 0:
         return None
-    e = float(opn.iloc[i_entry])
+    e = float(entry_price) if entry_price is not None else float(opn.iloc[i_entry])
     if direction == 1:
         stop, tgt = e - atr_stop * a, e + rr * atr_stop * a
     else:
@@ -70,28 +71,52 @@ def _simulate(daily, atr, i_entry, direction, rr, atr_stop, tide, cost=0.0):
     return direction * (float(close.iloc[-1]) / e - 1) - cost, "open_end", len(daily) - 1
 
 
-def _run_trades(daily, weekly, *, rr, atr_stop, fast, slow, signal, cost, long_only):
-    """Non-overlapping trade list for one parameter set (no look-ahead)."""
+def _run_trades(daily, weekly, *, rr, atr_stop, fast, slow, signal, cost, long_only, variant="macd"):
+    """Non-overlapping trade list for one parameter set (no look-ahead). ``variant`` picks the
+    Screen-2 trigger + Screen-3 entry: 'macd' (daily MACD-cross, enter next open) or 'elder'
+    (2-day Force Index pullback vs the tide + stop-confirmation entry through the setup bar's
+    high/low; if not triggered the order is cancelled)."""
     atr = ind.atr(daily)
     tide = _tide_daily(daily, weekly)
-    _, _, dh = ind.macd(daily["Close"], fast, slow, signal)
-    long_t = (dh.shift(1) < 0) & (dh > 0) & (tide == "up")
-    short_t = (dh.shift(1) > 0) & (dh < 0) & (tide == "down")
+    high, low, opn = daily["High"], daily["Low"], daily["Open"]
+    if variant == "elder":
+        fi = ind.force_index(daily, 2)
+        long_s = (tide == "up") & (fi < 0)
+        short_s = (tide == "down") & (fi > 0)
+    else:
+        _, _, dh = ind.macd(daily["Close"], fast, slow, signal)
+        long_s = (dh.shift(1) < 0) & (dh > 0) & (tide == "up")
+        short_s = (dh.shift(1) > 0) & (dh < 0) & (tide == "down")
+
     trades, i, n = [], 1, len(daily)
     while i < n - 1:
-        if long_t.iloc[i]:
+        if long_s.iloc[i]:
             direction = 1
-        elif short_t.iloc[i] and not long_only:
+        elif short_s.iloc[i] and not long_only:
             direction = -1
         else:
             i += 1
             continue
-        res = _simulate(daily, atr, i + 1, direction, rr, atr_stop, tide, cost)
+        j, entry_price = i + 1, None
+        if variant == "elder":  # Screen 3: confirm with a stop through the setup bar's high/low
+            if direction == 1:
+                level = float(high.iloc[i])
+                if float(high.iloc[j]) < level:
+                    i = j
+                    continue
+                entry_price = max(float(opn.iloc[j]), level)
+            else:
+                level = float(low.iloc[i])
+                if float(low.iloc[j]) > level:
+                    i = j
+                    continue
+                entry_price = min(float(opn.iloc[j]), level)
+        res = _simulate(daily, atr, j, direction, rr, atr_stop, tide, cost, entry_price)
         if res is None:
             i += 1
             continue
         ret, reason, exit_i = res
-        trades.append({"entry_date": daily.index[i + 1], "dir": direction,
+        trades.append({"entry_date": daily.index[j], "dir": direction,
                        "ret": float(ret), "reason": reason})
         i = exit_i + 1  # no overlapping positions
     return trades, tide, atr
@@ -113,10 +138,11 @@ def _perf(rets) -> dict:
 
 
 def triple_screen_backtest(daily, weekly, *, rr=1.5, atr_stop=2.0, fast=12, slow=26, signal=9,
-                           cost=0.0005, long_only=False, seed=0) -> dict:
+                           cost=0.0005, long_only=False, variant="macd", seed=0) -> dict:
     """Full backtest + random-entry control. ``cost`` = round-trip fraction per trade."""
     trades, tide, atr = _run_trades(daily, weekly, rr=rr, atr_stop=atr_stop, fast=fast,
-                                    slow=slow, signal=signal, cost=cost, long_only=long_only)
+                                    slow=slow, signal=signal, cost=cost, long_only=long_only,
+                                    variant=variant)
     bh = float(daily["Close"].iloc[-1] / daily["Close"].iloc[0] - 1)
     out = {"period": f"{daily.index[0].date()} → {daily.index[-1].date()}",
            "rr": rr, "atr_stop": atr_stop, "cost": cost, "long_only": long_only,
@@ -142,12 +168,13 @@ def triple_screen_backtest(daily, weekly, *, rr=1.5, atr_stop=2.0, fast=12, slow
 
 
 def backtest_with_holdout(daily, weekly, *, holdout_frac=0.3, rr=1.5, atr_stop=2.0,
-                          fast=12, slow=26, signal=9, cost=0.0005, long_only=False) -> dict:
+                          fast=12, slow=26, signal=9, cost=0.0005, long_only=False,
+                          variant="macd") -> dict:
     """In-sample head vs untouched holdout tail, net of cost. Indicators use the full
     series (correct warmup, no look-ahead); the entry DATE decides the window. A large
     positive ``oos_gap`` (in-sample ≫ holdout) is the fingerprint of overfitting."""
     trades, _, _ = _run_trades(daily, weekly, rr=rr, atr_stop=atr_stop, fast=fast, slow=slow,
-                               signal=signal, cost=cost, long_only=long_only)
+                               signal=signal, cost=cost, long_only=long_only, variant=variant)
     split = daily.index[int(len(daily) * (1 - holdout_frac))]
     ins = _perf([t["ret"] for t in trades if t["entry_date"] < split])
     oos = _perf([t["ret"] for t in trades if t["entry_date"] >= split])

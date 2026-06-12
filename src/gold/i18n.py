@@ -124,6 +124,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "lab_v_survives": "Holdout expectancy is positive net of costs ({n} trades). Promising — but small samples lie; keep forward-testing on data this was never tuned on.",
         "lab_sweep_btn": "Run parameter sweep",
         "lab_sweep_warn": "⚠ Ranking {n} parameter sets by the holdout and picking the best IS overfitting — once you select on the holdout it is no longer out-of-sample. A ‘positive’ top row (often a handful of trades) is almost certainly luck, not an edge. A real test needs a third split you never look at while searching.",
+        "lab_strat": "Strategy",
+        "var_macd": "MACD-cross",
+        "var_elder": "Elder original (Force Index)",
     },
     "zh-Hant": {
         "app_title": "黃金價格預測",
@@ -239,6 +242,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "lab_v_survives": "留出集期望值為正(計入成本,{n} 筆)。有點意思 —— 但小樣本會騙人;請繼續在沒調過參的新數據上向前驗證。",
         "lab_sweep_btn": "執行參數掃描",
         "lab_sweep_warn": "⚠ 用留出集給 {n} 組參數排名、再挑最優 —— 這本身就是過擬合;一旦你用留出集來挑,它就不再是樣本外。表裡那個「為正」的最優(往往只有幾筆)幾乎一定是運氣,不是邊際。真正的考試需要一塊你挑選時從不偷看的第三數據。",
+        "lab_strat": "策略",
+        "var_macd": "MACD 交叉",
+        "var_elder": "Elder 原版(Force Index)",
     },
     "ja": {
         "app_title": "ゴールド価格予測",
@@ -354,6 +360,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "lab_v_survives": "ホールドアウト期待値がコスト込みでプラス({n} トレード)。有望ですが小さなサンプルは嘘をつきます;調整していない新しいデータで前向き検証を続けてください。",
         "lab_sweep_btn": "パラメータ探索を実行",
         "lab_sweep_warn": "⚠ {n} 組のパラメータをホールドアウトで順位付けし最良を選ぶのは過学習です —— ホールドアウトで選んだ時点でアウトオブサンプルではありません。表の「プラス」の最良行(多くは数トレード)はほぼ確実に運であり優位性ではありません。本当の試験には、探索中に決して見ない第三の分割が必要です。",
+        "lab_strat": "戦略",
+        "var_macd": "MACDクロス",
+        "var_elder": "Elder原版(Force Index)",
     },
 }
 
