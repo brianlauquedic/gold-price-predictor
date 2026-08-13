@@ -1,0 +1,22 @@
+name: keep-alive
+
+# Pings the Render free web service so it doesn't spin down (it sleeps after ~15 min
+# idle, which makes the first visit take 30-60s to wake). GitHub's scheduler is
+# best-effort and can be a few minutes late, so we ping every 10 min for margin.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}   # allow manual runs from the Actions tab / gh CLI
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wake the app
+        run: |
+          for url in \
+            "https://gold.quedicshares.com/_stcore/health" \
+            "https://gold-price-predictor-gooz.onrender.com/_stcore/health"; do
+            curl -sS --retry 2 --max-time 90 -o /dev/null \
+              -w "%{http_code}  ${url}  (%{time_total}s)\n" "$url" || echo "ping failed: $url"
+          done
